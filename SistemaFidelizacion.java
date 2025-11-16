@@ -1,81 +1,67 @@
 package havanna;
 
-import java.util.*;
 import java.time.LocalDate;
+import java.util.List;
+import java.util.ArrayList;
+import java.sql.*;
 
 public class SistemaFidelizacion {
-    private List<Cliente> clientes = new ArrayList<>();
-    private List<Compra> compras = new ArrayList<>();
-    private List<Beneficio> beneficios = new ArrayList<>();
-    private List<String> movimientos = new ArrayList<>();
-    private int nextClientId = 1;
-    private int nextPromoId = 1;
+    private ClienteDAO clienteDAO = new ClienteDAO();
+    private CompraDAO compraDAO = new CompraDAO();
+    private PromocionDAO promoDAO = new PromocionDAO();
 
-    public SistemaFidelizacion() {
-        crearPromocion("Café gratis", 10);
-        crearPromocion("Caja de alfajores", 30);
-        crearPromocion("Descuento 20%", 20);
-    }
-
-    public int registrarCliente(String nombre, String email) {
-        Cliente c = new Cliente(nombre, email);
-        clientes.add(c);
-        int id = nextClientId++;
-        movimientos.add("Cliente creado id=" + id + " -> " + email + " (" + nombre + ")");
-        return id;
-    }
-
-    public Cliente getClientId(int id) {
-        int index = id - 1;
-        if (index >=0 && index < clientes.size()) return clientes.get(index);
-        return null;
+    public int registrarCliente(String nombre, String email, String dni, String tel, LocalDate fechaNac) {
+        return clienteDAO.registrarCliente(nombre, email, dni, tel, fechaNac);
     }
 
     public int registrarCompra(int idCliente, double monto) {
-        Cliente c = getClientId(idCliente);
-        if (c == null) throw new NoSuchElementException("Cliente no encontrado");
-        Compra comp = new Compra(idCliente, monto);
-        compras.add(comp);
-        int puntos = (int)Math.floor(monto / 100.0); 
-        if (puntos > 0) c.sumaPuntos (puntos);
-        movimientos.add("Compra idCliente=" + idCliente + " monto=" + monto + " -> +" + puntos + " pts");
-        return puntos;
+        return compraDAO.registrarCompra(idCliente, monto);
     }
 
     public int consultarPuntos(int idCliente) {
-        Cliente c = getClientId(idCliente);
-        if (c == null) throw new NoSuchElementException("Cliente no encontrado");
-        return c.getPuntos();
+        return clienteDAO.consultarPuntos(idCliente);
     }
 
-    public boolean canjearPuntos(int idCliente, int promoId) {
-        Cliente c = getClientId(idCliente);
-        if (c == null) throw new NoSuchElementException("Cliente no encontrado");
-        Beneficio promo = null;
-        for (Beneficio p : beneficios) if (p.getId() == promoId && p.isActivo()) promo = p;
-        if (promo == null) return false;
-        if (c.canjearPuntos(promo.getPuntosRequeridos())) {
-            movimientos.add("Canje cliente=" + idCliente + " promo=" + promoId + " -> -" + promo.getPuntosRequeridos() + " pts");
-            return true;
+    public List<Cliente> listarClientes() {
+        return clienteDAO.listarClientes();
+    }
+
+    public List<Beneficio> listarPromociones() {
+        return promoDAO.listarPromociones();
+    }
+
+    public boolean canjearPuntos(int idCliente, int idPromo) {
+        return promoDAO.canjear(idCliente, idPromo);
+    }
+
+    public List<String> getMovimientos() {
+        List<String> movimientos = new ArrayList<>();
+        String sql = "SELECT t.fecha, c.nombre, t.tipo, t.puntos, t.descripcion " +
+                     "FROM transaccion_puntos t " +
+                     "JOIN cliente c ON t.cliente_id = c.id " +
+                     "ORDER BY t.fecha DESC";
+
+        try (Connection con = ConexionBD.conectar();
+             PreparedStatement ps = con.prepareStatement(sql);
+             ResultSet rs = ps.executeQuery()) {
+
+            while (rs.next()) {
+                String m = rs.getTimestamp("fecha") + " - " +
+                           rs.getString("nombre") + " - " +
+                           rs.getString("tipo") + " - " +
+                           rs.getInt("puntos") + " pts - " +
+                           rs.getString("descripcion");
+                movimientos.add(m);
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
         }
-        return false;
-    }
 
-    public int crearPromocion(String desc, int puntos) {
-        Beneficio b = new Beneficio(nextPromoId++, desc, puntos, true);
-        beneficios.add(b);
-        return b.getId();
-    }
+        if (movimientos.isEmpty()) {
+            movimientos.add("No hay movimiento aún");
+        }
 
-    public List<Beneficio> listaPromocion() {
-        return Collections.unmodifiableList(beneficios);
-    }
-
-    public List<Cliente> listaClientes() {
-        return Collections.unmodifiableList(clientes);
-    }
-
-    public List<String> getMovimiento() {
-        return Collections.unmodifiableList(movimientos);
+        return movimientos;
     }
 }
+
